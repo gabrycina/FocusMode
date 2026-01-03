@@ -124,8 +124,8 @@ class AppState: ObservableObject {
             exitFullscreen(for: app)
         }
 
-        // Give time for fullscreen animations to complete, then hide
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // Give time for fullscreen animations to complete (macOS fullscreen animation ~1s), then hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             for app in NSWorkspace.shared.runningApplications {
                 guard app.activationPolicy == .regular,
                       let bundleId = app.bundleIdentifier,
@@ -140,13 +140,14 @@ class AppState: ObservableObject {
             let targetScreen = screens[max(0, screenIndex)]
             let shouldFullscreen = appConfig.fullscreen
 
-            // Check if already running
+            // Check if already running - start after fullscreen apps have exited
             if let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == appConfig.bundleIdentifier }) {
-                runningApp.unhide()
-                runningApp.activate(options: [.activateIgnoringOtherApps])
-                // Stagger positioning to avoid race conditions
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 0.7) {
-                    self.positionApp(runningApp, on: targetScreen, appName: appConfig.name, fullscreen: shouldFullscreen)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3 + Double(index) * 0.3) {
+                    runningApp.unhide()
+                    runningApp.activate(options: [.activateIgnoringOtherApps])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.positionApp(runningApp, on: targetScreen, appName: appConfig.name, fullscreen: shouldFullscreen)
+                    }
                 }
             } else if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appConfig.bundleIdentifier) {
                 // Open the app if not running
@@ -154,11 +155,13 @@ class AppState: ObservableObject {
                 openConfig.activates = true
 
                 let appName = appConfig.name
-                NSWorkspace.shared.openApplication(at: appURL, configuration: openConfig) { app, error in
-                    guard let app = app, error == nil else { return }
-                    // Give app more time to launch and create window
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 1.5) {
-                        self.positionApp(app, on: targetScreen, appName: appName, fullscreen: shouldFullscreen)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3 + Double(index) * 0.3) {
+                    NSWorkspace.shared.openApplication(at: appURL, configuration: openConfig) { app, error in
+                        guard let app = app, error == nil else { return }
+                        // Give app more time to launch and create window
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.positionApp(app, on: targetScreen, appName: appName, fullscreen: shouldFullscreen)
+                        }
                     }
                 }
             }
@@ -171,33 +174,84 @@ class AppState: ObservableObject {
         var windowsRef: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef)
 
+        var isInFullscreen = false
+
         if result == .success, let windows = windowsRef as? [AXUIElement] {
             for window in windows {
                 // Check if window is fullscreen
                 var fullscreenRef: CFTypeRef?
                 if AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &fullscreenRef) == .success,
-                   let isFullscreen = fullscreenRef as? Bool, isFullscreen {
-                    // Exit fullscreen by setting AXFullScreen to false
+                   let fullscreen = fullscreenRef as? Bool, fullscreen {
+                    isInFullscreen = true
+                    // Try setting AXFullScreen to false
                     AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, false as CFTypeRef)
                 }
             }
         }
 
-        // Also try AppleScript as fallback for some apps
-        if let appName = app.localizedName {
-            let script = """
-            tell application "System Events"
-                tell process "\(appName)"
-                    try
-                        set value of attribute "AXFullScreen" of window 1 to false
-                    end try
-                end tell
-            end tell
-            """
-            if let appleScript = NSAppleScript(source: script) {
-                var error: NSDictionary?
-                appleScript.executeAndReturnError(&error)
+        // If we detected fullscreen, also try keyboard shortcut as backup
+        if isInFullscreen {
+            // Activate the app first
+            app.activate(options: [.activateIgnoringOtherApps])
+
+            // Small delay then send Cmd+Ctrl+F to exit fullscreen
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.sendExitFullscreenKeyboard()
             }
+        } else {
+            // Try AppleScript to check and exit fullscreen
+            if let appName = app.localizedName {
+                app.activate(options: [.activateIgnoringOtherApps])
+
+                let script = """
+                tell application "System Events"
+                    tell process "\(appName)"
+                        try
+                            set fullscreenStatus to value of attribute "AXFullScreen" of window 1
+                            if fullscreenStatus is true then
+                                set value of attribute "AXFullScreen" of window 1 to false
+                            end if
+                        end try
+                    end tell
+                end tell
+                """
+                if let appleScript = NSAppleScript(source: script) {
+                    var error: NSDictionary?
+                    appleScript.executeAndReturnError(&error)
+                }
+            }
+        }
+    }
+
+    private func sendExitFullscreenKeyboard() {
+        // Try menu click first (more reliable)
+        let script = """
+        tell application "System Events"
+            tell (first process whose frontmost is true)
+                try
+                    click menu item "Exit Full Screen" of menu "View" of menu bar 1
+                end try
+            end tell
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+        }
+
+        // Also try Cmd+Ctrl+F as backup
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        // Key down
+        if let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x03, keyDown: true) { // 0x03 = F key
+            keyDown.flags = [.maskCommand, .maskControl]
+            keyDown.post(tap: .cghidEventTap)
+        }
+
+        // Key up
+        if let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x03, keyDown: false) {
+            keyUp.flags = [.maskCommand, .maskControl]
+            keyUp.post(tap: .cghidEventTap)
         }
     }
 
@@ -467,10 +521,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func checkAccessibilityPermissions() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        // Check without prompting first
+        let trusted = AXIsProcessTrusted()
         if !trusted {
-            print("Please grant accessibility permissions in System Preferences > Privacy & Security > Accessibility")
+            // Only prompt if we haven't prompted before in this session
+            let hasPrompted = UserDefaults.standard.bool(forKey: "hasPromptedForAccessibility")
+            if !hasPrompted {
+                // Prompt for permissions
+                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+                AXIsProcessTrustedWithOptions(options as CFDictionary)
+                UserDefaults.standard.set(true, forKey: "hasPromptedForAccessibility")
+            }
         }
     }
 
