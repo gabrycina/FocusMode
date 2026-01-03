@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FocusMode - Instant productivity workspace for macOS</title>
-    <meta name="description" content="A lightweight macOS menu bar app that instantly switches you to a distraction-free workspace with a single keyboard shortcut.">
+    <meta name="description" content="A free macOS menu bar app that instantly switches you to a distraction-free workspace. One keyboard shortcut to focus.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
     <style>
         * {
@@ -35,7 +35,7 @@
         }
 
         .download-section {
-            margin-bottom: 48px;
+            margin-bottom: 40px;
         }
 
         .download-btn {
@@ -75,10 +75,15 @@
             margin-top: 12px;
         }
 
+        .section-divider {
+            border-top: 1px solid #eee;
+            padding-top: 32px;
+            margin-top: 32px;
+        }
+
         .features {
             display: grid;
-            gap: 24px;
-            margin-bottom: 48px;
+            gap: 20px;
         }
 
         .feature h3 {
@@ -108,50 +113,16 @@
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
-        .section-divider {
-            border-top: 1px solid #eee;
-            padding-top: 32px;
-            margin-top: 32px;
+        .why {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 32px;
         }
 
-        .how-it-works {
-            margin-bottom: 48px;
-        }
-
-        .how-it-works h2 {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 16px;
-        }
-
-        .steps {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .step {
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
-        }
-
-        .step-number {
-            background: #000;
-            color: #fff;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 600;
-            flex-shrink: 0;
-        }
-
-        .step-text {
-            color: #444;
+        .why p {
+            color: #555;
+            font-size: 0.95rem;
         }
 
         footer {
@@ -167,33 +138,12 @@
         footer a:hover {
             text-decoration: underline;
         }
-
-        .demo-preview {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 24px;
-            margin: 32px 0;
-            color: white;
-            text-align: center;
-        }
-
-        .demo-preview .shortcut-display {
-            font-size: 2rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-            letter-spacing: 2px;
-        }
-
-        .demo-preview .shortcut-label {
-            opacity: 0.9;
-            font-size: 0.9rem;
-        }
     </style>
 </head>
 <body>
     <header>
         <h1>focus mode</h1>
-        <p class="tagline">a lightweight macos menu bar app that instantly switches you to a distraction-free workspace.</p>
+        <p class="tagline">one keyboard shortcut to hide distractions and enter your productivity workspace.</p>
     </header>
 
     <section class="download-section">
@@ -202,25 +152,20 @@
                 <circle cx="12" cy="12" r="10"/>
                 <circle cx="12" cy="12" r="6"/>
                 <circle cx="12" cy="12" r="2"/>
-                <line x1="12" y1="2" x2="12" y2="6"/>
-                <line x1="12" y1="18" x2="12" y2="22"/>
-                <line x1="2" y1="12" x2="6" y2="12"/>
-                <line x1="18" y1="12" x2="22" y2="12"/>
             </svg>
             Download for macOS
         </a>
-        <p class="platform-note">requires macos 13.0+</p>
+        <p class="platform-note">requires macos 13.0+ · free forever</p>
     </section>
 
-    <div class="demo-preview">
-        <div class="shortcut-display">⌘ ⇧ P</div>
-        <div class="shortcut-label">press to enter focus mode</div>
-    </div>
+    <section class="why">
+        <p>tools like raycast have workspace switching as a <strong>paid feature</strong>. focusmode does the same thing, completely free and open source.</p>
+    </section>
 
     <section class="features">
         <div class="feature">
-            <h3>instant workspace switching</h3>
-            <p>one keyboard shortcut hides everything except your chosen apps. no clicking, no dragging, just focus.</p>
+            <h3>instant workspace</h3>
+            <p>press one shortcut, hide everything except your chosen apps. no clicking through windows.</p>
             <div class="shortcut">
                 <span class="key">⌘</span>
                 <span class="key">⇧</span>
@@ -229,60 +174,20 @@
         </div>
 
         <div class="feature">
-            <h3>multi-monitor aware</h3>
-            <p>assign apps to specific screens. your browser on the left, your editor on the right. always where you expect them.</p>
-        </div>
-
-        <div class="feature">
-            <h3>menu bar native</h3>
-            <p>lives quietly in your menu bar. no dock icon, no window clutter. configure your workspace with a click.</p>
+            <h3>multi-monitor</h3>
+            <p>assign apps to specific screens. your browser on one, your editor on another.</p>
         </div>
 
         <div class="feature">
             <h3>free & open source</h3>
-            <p>built with swift. lightweight, fast, and yours to modify. <a href="https://github.com/gabrycina/FocusMode">view source on github</a>.</p>
-        </div>
-    </section>
-
-    <section class="how-it-works section-divider">
-        <h2>how it works</h2>
-        <div class="steps">
-            <div class="step">
-                <span class="step-number">1</span>
-                <span class="step-text">click the target icon in your menu bar</span>
-            </div>
-            <div class="step">
-                <span class="step-number">2</span>
-                <span class="step-text">search and select the apps for your workspace</span>
-            </div>
-            <div class="step">
-                <span class="step-number">3</span>
-                <span class="step-text">assign screens and toggle maximize per app</span>
-            </div>
-            <div class="step">
-                <span class="step-number">4</span>
-                <span class="step-text">press ⌘⇧P anytime to instantly enter focus mode</span>
-            </div>
+            <p>native swift, lightweight, yours to modify. <a href="https://github.com/gabrycina/FocusMode">view source</a>.</p>
         </div>
     </section>
 
     <footer class="section-divider">
-        <p><a href="https://github.com/gabrycina/FocusMode">source code</a> · made by <a href="https://github.com/gabrycina">@gabrycina</a></p>
+        <p><a href="https://github.com/gabrycina/FocusMode">source</a> · made by <a href="https://github.com/gabrycina">@gabrycina</a></p>
     </footer>
 
-    <script>
-        // Easter egg: press F to simulate focus mode
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
-                const preview = document.querySelector('.demo-preview');
-                preview.style.transform = 'scale(1.05)';
-                preview.style.transition = 'transform 0.2s';
-                setTimeout(() => {
-                    preview.style.transform = 'scale(1)';
-                }, 200);
-            }
-        });
-    </script>
     <script data-goatcounter="https://focusmode.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
 </body>
