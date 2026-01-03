@@ -10,6 +10,15 @@ struct AppConfig: Codable, Identifiable, Equatable {
     let name: String
     var screenIndex: Int // Which screen to place the app on (0-based)
     var enabled: Bool
+    var fullscreen: Bool // Whether to maximize the app when activated
+
+    init(bundleIdentifier: String, name: String, screenIndex: Int = 0, enabled: Bool = true, fullscreen: Bool = true) {
+        self.bundleIdentifier = bundleIdentifier
+        self.name = name
+        self.screenIndex = screenIndex
+        self.enabled = enabled
+        self.fullscreen = fullscreen
+    }
 }
 
 struct WorkspaceConfig: Codable {
@@ -105,26 +114,39 @@ class AppState: ObservableObject {
         // Get all screens
         let screens = NSScreen.screens
 
-        // Minimize windows of non-configured apps
+        // First, exit fullscreen for all non-configured apps, then hide them
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular,
                   let bundleId = app.bundleIdentifier,
                   !enabledBundleIds.contains(bundleId) else { continue }
-            app.hide()
+
+            // Exit fullscreen first using Accessibility API
+            exitFullscreen(for: app)
+        }
+
+        // Give time for fullscreen animations to complete, then hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            for app in NSWorkspace.shared.runningApplications {
+                guard app.activationPolicy == .regular,
+                      let bundleId = app.bundleIdentifier,
+                      !enabledBundleIds.contains(bundleId) else { continue }
+                app.hide()
+            }
         }
 
         // Open and position configured apps with staggered timing
         for (index, appConfig) in enabledApps.enumerated() {
             let screenIndex = min(appConfig.screenIndex, screens.count - 1)
             let targetScreen = screens[max(0, screenIndex)]
+            let shouldFullscreen = appConfig.fullscreen
 
             // Check if already running
             if let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == appConfig.bundleIdentifier }) {
                 runningApp.unhide()
                 runningApp.activate(options: [.activateIgnoringOtherApps])
                 // Stagger positioning to avoid race conditions
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 0.2) {
-                    self.positionApp(runningApp, on: targetScreen, appName: appConfig.name)
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 0.7) {
+                    self.positionApp(runningApp, on: targetScreen, appName: appConfig.name, fullscreen: shouldFullscreen)
                 }
             } else if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appConfig.bundleIdentifier) {
                 // Open the app if not running
@@ -135,15 +157,51 @@ class AppState: ObservableObject {
                 NSWorkspace.shared.openApplication(at: appURL, configuration: openConfig) { app, error in
                     guard let app = app, error == nil else { return }
                     // Give app more time to launch and create window
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 1.0) {
-                        self.positionApp(app, on: targetScreen, appName: appName)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.3 + 1.5) {
+                        self.positionApp(app, on: targetScreen, appName: appName, fullscreen: shouldFullscreen)
                     }
                 }
             }
         }
     }
 
-    private func positionApp(_ app: NSRunningApplication, on screen: NSScreen, appName: String) {
+    private func exitFullscreen(for app: NSRunningApplication) {
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+
+        var windowsRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef)
+
+        if result == .success, let windows = windowsRef as? [AXUIElement] {
+            for window in windows {
+                // Check if window is fullscreen
+                var fullscreenRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &fullscreenRef) == .success,
+                   let isFullscreen = fullscreenRef as? Bool, isFullscreen {
+                    // Exit fullscreen by setting AXFullScreen to false
+                    AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, false as CFTypeRef)
+                }
+            }
+        }
+
+        // Also try AppleScript as fallback for some apps
+        if let appName = app.localizedName {
+            let script = """
+            tell application "System Events"
+                tell process "\(appName)"
+                    try
+                        set value of attribute "AXFullScreen" of window 1 to false
+                    end try
+                end tell
+            end tell
+            """
+            if let appleScript = NSAppleScript(source: script) {
+                var error: NSDictionary?
+                appleScript.executeAndReturnError(&error)
+            }
+        }
+    }
+
+    private func positionApp(_ app: NSRunningApplication, on screen: NSScreen, appName: String, fullscreen: Bool) {
         // Try Accessibility API first (more reliable for Chromium-based apps)
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
 
@@ -158,10 +216,12 @@ class AppState: ObservableObject {
             let positionValue = AXValueCreate(.cgPoint, &position)!
             AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
 
-            // Set size
-            var size = CGSize(width: visibleFrame.width, height: visibleFrame.height)
-            let sizeValue = AXValueCreate(.cgSize, &size)!
-            AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+            // Set size only if fullscreen is enabled
+            if fullscreen {
+                var size = CGSize(width: visibleFrame.width, height: visibleFrame.height)
+                let sizeValue = AXValueCreate(.cgSize, &size)!
+                AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+            }
 
             return
         }
@@ -176,6 +236,8 @@ class AppState: ObservableObject {
 
         let processName = app.localizedName ?? appName
 
+        let sizeCommand = fullscreen ? "set size of w to {\(width), \(height)}" : ""
+
         let script = """
         tell application "\(processName)"
             activate
@@ -188,7 +250,7 @@ class AppState: ObservableObject {
                 try
                     repeat with w in windows
                         set position of w to {\(xPos), \(yPos)}
-                        set size of w to {\(width), \(height)}
+                        \(sizeCommand)
                     end repeat
                 end try
             end tell
@@ -300,52 +362,71 @@ struct AppRow: View {
     }
 
     var body: some View {
-        HStack {
-            // Checkbox
-            Toggle("", isOn: Binding(
-                get: { isEnabled },
-                set: { enabled in
-                    if enabled {
-                        appConfig = AppConfig(
-                            bundleIdentifier: installedApp.bundleIdentifier,
-                            name: installedApp.name,
-                            screenIndex: 0,
-                            enabled: true
-                        )
-                    } else {
-                        appConfig?.enabled = false
+        VStack(spacing: 4) {
+            HStack {
+                // Checkbox
+                Toggle("", isOn: Binding(
+                    get: { isEnabled },
+                    set: { enabled in
+                        if enabled {
+                            appConfig = AppConfig(
+                                bundleIdentifier: installedApp.bundleIdentifier,
+                                name: installedApp.name,
+                                screenIndex: 0,
+                                enabled: true,
+                                fullscreen: true
+                            )
+                        } else {
+                            appConfig?.enabled = false
+                        }
                     }
-                }
-            ))
-            .toggleStyle(.checkbox)
+                ))
+                .toggleStyle(.checkbox)
 
-            // App icon
-            if let icon = installedApp.icon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 20, height: 20)
+                // App icon
+                if let icon = installedApp.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                }
+
+                // App name
+                Text(installedApp.name)
+                    .lineLimit(1)
+
+                Spacer()
+
+                // Screen picker (only show if enabled and multiple screens)
+                if isEnabled && screenCount > 1 {
+                    Picker("", selection: Binding(
+                        get: { appConfig?.screenIndex ?? 0 },
+                        set: { appConfig?.screenIndex = $0 }
+                    )) {
+                        ForEach(0..<screenCount, id: \.self) { index in
+                            Text("Screen \(index + 1)").tag(index)
+                        }
+                    }
+                    .frame(width: 90)
+                }
             }
 
-            // App name
-            Text(installedApp.name)
-                .lineLimit(1)
-
-            Spacer()
-
-            // Screen picker (only show if enabled and multiple screens)
-            if isEnabled && screenCount > 1 {
-                Picker("", selection: Binding(
-                    get: { appConfig?.screenIndex ?? 0 },
-                    set: { appConfig?.screenIndex = $0 }
-                )) {
-                    ForEach(0..<screenCount, id: \.self) { index in
-                        Text("Screen \(index + 1)").tag(index)
-                    }
+            // Fullscreen toggle (only show if enabled)
+            if isEnabled {
+                HStack {
+                    Spacer()
+                        .frame(width: 24)
+                    Toggle("Maximize window", isOn: Binding(
+                        get: { appConfig?.fullscreen ?? true },
+                        set: { appConfig?.fullscreen = $0 }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    Spacer()
                 }
-                .frame(width: 90)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(isEnabled ? Color.accentColor.opacity(0.1) : Color.clear)
         .cornerRadius(6)

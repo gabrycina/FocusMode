@@ -48,9 +48,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundleDisplayName</key>
     <string>FocusMode</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
@@ -91,7 +91,7 @@ echo -e "${GREEN}✓ App bundle created at: $APP_BUNDLE${NC}"
 # Create DMG
 echo -e "${YELLOW}→ Creating DMG installer...${NC}"
 
-DMG_NAME="FocusMode-1.0.0.dmg"
+DMG_NAME="FocusMode-1.1.0.dmg"
 DMG_PATH="build/$DMG_NAME"
 DMG_TEMP="build/dmg_temp"
 

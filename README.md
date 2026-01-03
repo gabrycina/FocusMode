@@ -2,15 +2,15 @@
 
 A lightweight macOS menu bar app that instantly switches you to a distraction-free workspace with a single keyboard shortcut.
 
-![FocusMode Demo](https://raw.githubusercontent.com/gabrycina/FocusMode/main/Assets/demo.gif)
+**[Download](https://github.com/gabrycina/FocusMode/releases/latest) · [Website](https://gabrycina.github.io/FocusMode/)**
 
 ## Features
 
 - **One-key activation** - Press `Cmd+Shift+P` to instantly enter focus mode
 - **Multi-monitor support** - Assign apps to specific screens
-- **Clean workspace** - Hides all other apps, shows only what you need
+- **Maximize toggle** - Choose whether each app should fill the screen or keep its size
+- **Clean workspace** - Hides all other apps (including fullscreen ones!)
 - **Menu bar app** - Lives in your menu bar, no dock icon clutter
-- **Configurable** - Choose which apps are part of your productivity setup
 - **Native & fast** - Built with Swift, minimal resource usage
 
 ## Installation
@@ -37,12 +37,13 @@ The app will be at `build/FocusMode.app`
 1. **Click the target icon** in your menu bar to open settings
 2. **Search and select apps** you want in your focus workspace
 3. **Assign screens** (if you have multiple monitors)
-4. **Press `Cmd+Shift+P`** to activate your workspace
+4. **Toggle "Maximize window"** per app if you want it fullscreen
+5. **Press `Cmd+Shift+P`** to activate your workspace
 
 When activated:
-- All non-configured apps are hidden
-- Your selected apps open and maximize on their assigned screens
-- You're immediately in your productivity zone
+- All non-configured apps exit fullscreen and get hidden
+- Your selected apps open and position on their assigned screens
+- Apps with "Maximize window" enabled fill the screen
 
 ## Requirements
 
@@ -53,6 +54,7 @@ When activated:
 
 FocusMode needs Accessibility permissions to:
 - Move and resize windows
+- Exit fullscreen for other applications
 - Hide other applications
 
 Grant access at: **System Settings → Privacy & Security → Accessibility**
