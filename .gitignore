@@ -1,0 +1,25 @@
+# Build artifacts
+.build/
+build/
+*.dmg
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# App bundles (we'll build fresh)
+*.app
+
+# IDE
+.idea/
+.vscode/
+
+# Iconset (generated)
+Assets/AppIcon.iconset/
