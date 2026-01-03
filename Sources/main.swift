@@ -114,144 +114,53 @@ class AppState: ObservableObject {
         // Get all screens
         let screens = NSScreen.screens
 
-        // First, exit fullscreen for all non-configured apps, then hide them
+        // Exit fullscreen and hide non-configured apps
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular,
                   let bundleId = app.bundleIdentifier,
                   !enabledBundleIds.contains(bundleId) else { continue }
 
-            // Exit fullscreen first using Accessibility API
-            exitFullscreen(for: app)
+            // Try to exit fullscreen via AX API (fast, non-blocking)
+            exitFullscreenFast(for: app)
+            app.hide()
         }
 
-        // Give time for fullscreen animations to complete (macOS fullscreen animation ~1s), then hide
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            for app in NSWorkspace.shared.runningApplications {
-                guard app.activationPolicy == .regular,
-                      let bundleId = app.bundleIdentifier,
-                      !enabledBundleIds.contains(bundleId) else { continue }
-                app.hide()
-            }
-        }
-
-        // Open and position configured apps with staggered timing
+        // Open and position configured apps
         for (index, appConfig) in enabledApps.enumerated() {
             let screenIndex = min(appConfig.screenIndex, screens.count - 1)
             let targetScreen = screens[max(0, screenIndex)]
             let shouldFullscreen = appConfig.fullscreen
 
-            // Check if already running - start after fullscreen apps have exited
             if let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == appConfig.bundleIdentifier }) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3 + Double(index) * 0.3) {
-                    runningApp.unhide()
-                    runningApp.activate(options: [.activateIgnoringOtherApps])
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        self.positionApp(runningApp, on: targetScreen, appName: appConfig.name, fullscreen: shouldFullscreen)
-                    }
+                runningApp.unhide()
+                runningApp.activate(options: [.activateIgnoringOtherApps])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1 + Double(index) * 0.15) {
+                    self.positionApp(runningApp, on: targetScreen, appName: appConfig.name, fullscreen: shouldFullscreen)
                 }
             } else if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appConfig.bundleIdentifier) {
-                // Open the app if not running
                 let openConfig = NSWorkspace.OpenConfiguration()
                 openConfig.activates = true
-
                 let appName = appConfig.name
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3 + Double(index) * 0.3) {
-                    NSWorkspace.shared.openApplication(at: appURL, configuration: openConfig) { app, error in
-                        guard let app = app, error == nil else { return }
-                        // Give app more time to launch and create window
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.positionApp(app, on: targetScreen, appName: appName, fullscreen: shouldFullscreen)
-                        }
+
+                NSWorkspace.shared.openApplication(at: appURL, configuration: openConfig) { app, error in
+                    guard let app = app, error == nil else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.positionApp(app, on: targetScreen, appName: appName, fullscreen: shouldFullscreen)
                     }
                 }
             }
         }
     }
 
-    private func exitFullscreen(for app: NSRunningApplication) {
+    private func exitFullscreenFast(for app: NSRunningApplication) {
+        // Quick attempt to exit fullscreen via Accessibility API
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
-
         var windowsRef: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef)
-
-        var isInFullscreen = false
-
-        if result == .success, let windows = windowsRef as? [AXUIElement] {
+        if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let windows = windowsRef as? [AXUIElement] {
             for window in windows {
-                // Check if window is fullscreen
-                var fullscreenRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &fullscreenRef) == .success,
-                   let fullscreen = fullscreenRef as? Bool, fullscreen {
-                    isInFullscreen = true
-                    // Try setting AXFullScreen to false
-                    AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, false as CFTypeRef)
-                }
+                AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, false as CFTypeRef)
             }
-        }
-
-        // If we detected fullscreen, also try keyboard shortcut as backup
-        if isInFullscreen {
-            // Activate the app first
-            app.activate(options: [.activateIgnoringOtherApps])
-
-            // Small delay then send Cmd+Ctrl+F to exit fullscreen
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.sendExitFullscreenKeyboard()
-            }
-        } else {
-            // Try AppleScript to check and exit fullscreen
-            if let appName = app.localizedName {
-                app.activate(options: [.activateIgnoringOtherApps])
-
-                let script = """
-                tell application "System Events"
-                    tell process "\(appName)"
-                        try
-                            set fullscreenStatus to value of attribute "AXFullScreen" of window 1
-                            if fullscreenStatus is true then
-                                set value of attribute "AXFullScreen" of window 1 to false
-                            end if
-                        end try
-                    end tell
-                end tell
-                """
-                if let appleScript = NSAppleScript(source: script) {
-                    var error: NSDictionary?
-                    appleScript.executeAndReturnError(&error)
-                }
-            }
-        }
-    }
-
-    private func sendExitFullscreenKeyboard() {
-        // Try menu click first (more reliable)
-        let script = """
-        tell application "System Events"
-            tell (first process whose frontmost is true)
-                try
-                    click menu item "Exit Full Screen" of menu "View" of menu bar 1
-                end try
-            end tell
-        end tell
-        """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-        }
-
-        // Also try Cmd+Ctrl+F as backup
-        let source = CGEventSource(stateID: .hidSystemState)
-
-        // Key down
-        if let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x03, keyDown: true) { // 0x03 = F key
-            keyDown.flags = [.maskCommand, .maskControl]
-            keyDown.post(tap: .cghidEventTap)
-        }
-
-        // Key up
-        if let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x03, keyDown: false) {
-            keyUp.flags = [.maskCommand, .maskControl]
-            keyUp.post(tap: .cghidEventTap)
         }
     }
 
